@@ -4,6 +4,8 @@ import org.ashahar.patientservice.dto.PatientRequestDTO;
 import org.ashahar.patientservice.dto.PatientResponseDTO;
 import org.ashahar.patientservice.exception.EmailAlreadyExistsException;
 import org.ashahar.patientservice.exception.PatientNotFoundException;
+import org.ashahar.patientservice.grpc.BillingServiceGrpcClient;
+import org.ashahar.patientservice.kafka.kafkaProducer;
 import org.ashahar.patientservice.mapper.PatientMapper;
 import org.ashahar.patientservice.model.Patient;
 import org.ashahar.patientservice.repository.PatientRepo;
@@ -16,10 +18,14 @@ import java.util.UUID;
 @Service
 public class PatientService {
 
-    private PatientRepo patientRepo;
+    private final PatientRepo patientRepo;
+    private final BillingServiceGrpcClient billingServiceGrpcClient;
+    private final org.ashahar.patientservice.kafka.kafkaProducer kafkaProducer;
 
-    public PatientService(PatientRepo patientRepo) {
+    public PatientService(PatientRepo patientRepo, BillingServiceGrpcClient billingServiceGrpcClient, kafkaProducer kafkaProducer) {
         this.patientRepo = patientRepo;
+        this.billingServiceGrpcClient = billingServiceGrpcClient;
+        this.kafkaProducer = kafkaProducer;
     }
 
     public List<PatientResponseDTO> getPatients(){
@@ -35,6 +41,11 @@ public class PatientService {
             throw new EmailAlreadyExistsException("Email already exists: " + patientRequestDTO.getEmail());
         }
         Patient newPatient = patientRepo.save(PatientMapper.toModel(patientRequestDTO));
+
+        billingServiceGrpcClient.createBillingAccount(newPatient.getId().toString(), newPatient.getName(), newPatient.getEmail());
+
+        kafkaProducer.sendEvent(newPatient);
+
         return PatientMapper.toDTO(newPatient);
     }
 
